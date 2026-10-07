@@ -7,17 +7,81 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Recuperer ce depot (le patch)
-        uses: actions/checkout@v4
-        with:
-          path: patch
-
-      - name: Recuperer Epsilon (version testee)
+      - name: Recuperer Epsilon et appliquer le mode paysage
         run: |
           git clone https://github.com/numworks/epsilon.git epsilon
           cd epsilon
           git checkout 72c8306f4fe3adf3bfc9c79802a39b80afb8e988
-          git apply ../patch/numworks-landscape.patch
+          tr -d ' \r\t' > ../patch.b64 <<'PATCH_FIN'
+          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
+          xao3AAA=
+          PATCH_FIN
+          base64 -di ../patch.b64 | gunzip > ../paysage.patch
+          git apply ../paysage.patch
           # Appli separee : cohabite avec l'appli NumWorks officielle
           sed -i 's/applicationId = "com.numworks.calculator"/applicationId = "com.numworks.calculator.paysage"/' shared/ion/src/simulator/android/build.gradle
           sed -i 's/>NumWorks</>NumWorks Paysage</' shared/ion/src/simulator/android/src/res/values/strings.xml
