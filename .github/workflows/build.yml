@@ -1,0 +1,52 @@
+name: NumWorks paysage APK
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recuperer ce depot (le patch)
+        uses: actions/checkout@v4
+        with:
+          path: patch
+
+      - name: Recuperer Epsilon (version testee)
+        run: |
+          git clone https://github.com/numworks/epsilon.git epsilon
+          cd epsilon
+          git checkout 72c8306f4fe3adf3bfc9c79802a39b80afb8e988
+          git apply ../patch/numworks-landscape.patch
+          # Appli separee : cohabite avec l'appli NumWorks officielle
+          sed -i 's/applicationId = "com.numworks.calculator"/applicationId = "com.numworks.calculator.paysage"/' shared/ion/src/simulator/android/build.gradle
+          sed -i 's/>NumWorks</>NumWorks Paysage</' shared/ion/src/simulator/android/src/res/values/strings.xml
+
+      - name: Preparer l'environnement Android (Docker)
+        working-directory: epsilon
+        run: docker build -f tools/Dockerfile.android . --tag numworks-android
+
+      - name: Creer une cle de signature
+        working-directory: epsilon
+        run: keytool -genkeypair -noprompt -keystore release.jks -storepass paysage -keypass paysage -alias paysage -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=NumWorks Paysage"
+
+      - name: Compiler l'APK
+        working-directory: epsilon
+        run: |
+          docker run -i --user=$(id -u):$(id -g) \
+            --env MAKEFLAGS=-j4 \
+            --env ANDROID_SIGNING_STORE_FILE=/monorepo/release.jks \
+            --env ANDROID_SIGNING_STORE_PASSWORD=paysage \
+            --env ANDROID_SIGNING_KEY_ALIAS=paysage \
+            --env ANDROID_SIGNING_KEY_PASSWORD=paysage \
+            --env GRADLE_USER_HOME=/monorepo/.gradle \
+            --mount type=bind,source=.,target=/monorepo \
+            numworks-android sh -c "make PLATFORM=android ARCHS='arm64-v8a armeabi-v7a' epsilon.apk"
+          cp epsilon/output/release/android/epsilon.apk ../NumWorks-Paysage.apk
+
+      - name: Mettre l'APK en telechargement
+        uses: actions/upload-artifact@v4
+        with:
+          name: NumWorks-Paysage
+          path: NumWorks-Paysage.apk
+          retention-days: 30
