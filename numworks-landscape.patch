@@ -1,0 +1,320 @@
+diff --git a/shared/ion/src/simulator/android/src/java/com/numworks/calculator/EpsilonActivity.java b/shared/ion/src/simulator/android/src/java/com/numworks/calculator/EpsilonActivity.java
+index a865c10..e0e80dc 100644
+--- a/shared/ion/src/simulator/android/src/java/com/numworks/calculator/EpsilonActivity.java
++++ b/shared/ion/src/simulator/android/src/java/com/numworks/calculator/EpsilonActivity.java
+@@ -5,6 +5,7 @@ import java.util.Locale;
+ import android.app.Activity;
+ import android.content.Context;
+ import android.content.ContentResolver;
++import android.content.pm.ActivityInfo;
+ import android.graphics.Bitmap;
+ import android.graphics.BitmapFactory;
+ import android.os.Bundle;
+@@ -44,6 +45,15 @@ public class EpsilonActivity extends SDLActivity {
+     return val != 0;
+   }
+ 
++  /* SDL locks the orientation of a fullscreen window to the one matching its
++   * initial size (portrait). Allow every orientation instead, while respecting
++   * the user's rotation lock: the layout switches to "screen on the left, keys
++   * on the right" when the window is wider than tall. */
++  @Override
++  public void setOrientationBis(int w, int h, boolean resizable, String hint) {
++    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_USER);
++  }
++
+   @Override
+   protected void onCreate(Bundle savedInstanceState) {
+     /* This is done to hide the status bar and the bottom navigation buttons.
+diff --git a/shared/ion/src/simulator/shared/epsilon/layout.json b/shared/ion/src/simulator/shared/epsilon/layout.json
+index 0a55cdb..2461f0c 100644
+--- a/shared/ion/src/simulator/shared/epsilon/layout.json
++++ b/shared/ion/src/simulator/shared/epsilon/layout.json
+@@ -2,6 +2,8 @@
+   "background": [0, 0, 1130, 2220],
+   "area_of_interest": [0, 0, 1130, 2220],
+   "screen": [167, 173, 796, 597],
++  "landscape_screen_panel": [115, 120, 900, 703],
++  "landscape_keyboard_panel": [90, 860, 950, 1270],
+   "calculatorPosition": [7.9,0.6,84.1,89.1],
+   "shapes": {
+     "HorizontalArrow": ["Left", "Right"],
+diff --git a/shared/ion/src/simulator/shared/layout.py b/shared/ion/src/simulator/shared/layout.py
+index 4026071..597dda8 100755
+--- a/shared/ion/src/simulator/shared/layout.py
++++ b/shared/ion/src/simulator/shared/layout.py
+@@ -64,91 +64,161 @@ def print_background_areas(f, background_values):
+ 
+     print_sdl_frect(f, "areaOfInterest", background_values["area_of_interest"])
+     print_sdl_frect(f, "screenRect", background_values["screen"])
+-
+-
+-def print_before_keys(f):
+-    f.write("static SDL_Rect sFrame;\n")
+-
+-    f.write("static void makeAbsolute(const SDL_FRect f, SDL_Rect * r) {\n")
+-    f.write(
+-        "  r->x = std::round(f.x * static_cast<float>(sFrame.w) + static_cast<float>(sFrame.x));\n"
++    # Landscape mode: the screen area and the keyboard area are cropped out of
++    # the background and drawn side by side (screen on the left, keys on the
++    # right) instead of shrinking the whole portrait calculator.
++    print_sdl_frect(
++        f,
++        "landscapeScreenPanel",
++        background_values.get("landscape_screen_panel", background_values["screen"]),
+     )
+-    f.write(
+-        "  r->y = std::round(f.y * static_cast<float>(sFrame.h) + static_cast<float>(sFrame.y));\n"
++    print_sdl_frect(
++        f,
++        "landscapeKeyboardPanel",
++        background_values.get(
++            "landscape_keyboard_panel", background_values["area_of_interest"]
++        ),
+     )
+-    f.write("  r->w = std::round(f.w * static_cast<float>(sFrame.w));\n")
+-    f.write("  r->h = std::round(f.h * static_cast<float>(sFrame.h));\n")
+-    f.write("}\n")
+ 
+-    f.write("static void makeAbsolute(const SDL_FPoint f, SDL_Point * p) {\n")
+-    f.write("  p->x = f.x * sFrame.w + sFrame.x;\n")
+-    f.write("  p->y = f.y * sFrame.h + sFrame.y;\n")
+-    f.write("}\n")
+ 
+-    f.write("void recompute(int width, int height) {\n")
+-    f.write("  float windowWidth = static_cast<float>(width);\n")
+-    f.write("  float windowHeight = static_cast<float>(height);\n")
+-    f.write(
+-        "  float aoiRatio = (areaOfInterest.w / areaOfInterest.h) * (static_cast<float>(backgroundWidth)/static_cast<float>(backgroundHeight));\n"
+-    )
+-    f.write("  float windowRatio = windowWidth/windowHeight;\n")
+-    f.write("  if (aoiRatio > windowRatio) {\n")
+-    f.write(
+-        "    // Area of interest is wider than the window (e.g. aoe 16:9, window 4:3)\n"
+-    )
+-    f.write('    // There will be "black bars" above and below\n')
+-    f.write("    // We want the areaOfInterest's rect in pixels to be\n")
+-    f.write("    // aoiInPixels.w = windowWidth\n")
+-    f.write("    // aoiInPixels.x = 0\n")
+-    f.write("    // aoiInPixels.h = windowWidth / (aoiRatio*deviceRatio)\n")
+-    f.write("    // aoiInPixels.y = (windowHeight - aoiInPixels.h)/2\n")
+-    f.write("    // But we also know that\n")
+-    f.write("    // aoiInPixels.x = sFrame.x + areaOfInterest.x*sFrame.w\n")
+-    f.write("    // aoiInPixels.y = sFrame.y + areaOfInterest.y*sFrame.h\n")
+-    f.write("    // aoiInPixels.w = sFrame.w * areaOfInterest.w\n")
+-    f.write("    // aoiInPixels.h = sFrame.h * areaOfInterest*h\n")
+-
+-    f.write("    sFrame.w = windowWidth / areaOfInterest.w;\n")
+-    f.write("    sFrame.h = (windowWidth / aoiRatio) / areaOfInterest.h;\n")
+-    f.write("    sFrame.x = - areaOfInterest.x * sFrame.w;\n")
+-    f.write(
+-        "    sFrame.y = (windowHeight - windowWidth/aoiRatio)/2 - areaOfInterest.y * sFrame.h;\n"
+-    )
+-    f.write("  } else {\n")
+-    f.write(
+-        "    // Area of interest is taller than the window (e.g. window 16:9, aoe 4:3)\n"
+-    )
+-    f.write('    // There will be "black bars" on the sides\n')
+-    f.write("    // We want the areaOfInterest's rect in pixels to be\n")
+-    f.write("    // aoiInPixels.h = windowHeight\n")
+-    f.write("    // aoiInPixels.y = 0\n")
+-    f.write("    // aoiInPixels.x = windowHeight * aoiRatio\n")
+-    f.write("    // aoiInPixels.w = (windowWidth - aoiInPixels.w)/2;\n")
+-    f.write("    // But we also know that\n")
+-    f.write("    // aoiInPixels.x = sFrame.x + areaOfInterest.x*sFrame.w\n")
+-    f.write("    // aoiInPixels.y = sFrame.y + areaOfInterest.y*sFrame.h\n")
+-    f.write("    // aoiInPixels.w = sFrame.w * areaOfInterest.w\n")
+-    f.write("    // aoiInPixels.h = sFrame.h * areaOfInterest*h\n")
+-
+-    f.write("    sFrame.h = windowHeight / areaOfInterest.h;\n")
+-    f.write("    sFrame.w = (windowHeight * aoiRatio) / areaOfInterest.w;\n")
+-    f.write("    sFrame.y = - areaOfInterest.y * sFrame.h;\n")
+-    f.write(
+-        "    sFrame.x = (windowWidth - windowHeight*aoiRatio)/2.0f - areaOfInterest.x * sFrame.w;\n"
+-    )
+-    f.write("  }\n")
+-    f.write("}\n")
+ 
+-    f.write("void getScreenRect(SDL_Rect * rect) {\n")
+-    f.write("  makeAbsolute(screenRect, rect);\n")
+-    f.write("}\n")
++LAYOUT_CORE = r"""
++/* The background is drawn as one or several panels. Each panel copies a part
++ * of the background (src, in normalized background coordinates) to a rect of
++ * the window (dst, in pixels).
++ *  - Portrait: a single panel showing the whole calculator.
++ *  - Landscape: two panels, the screen on the left and the keyboard on the
++ *    right. Panels are ordered by src.y (screen above keyboard in the
++ *    background), which lets us find the panel of any point from its y. */
++struct Panel {
++  SDL_FRect src;
++  SDL_Rect dst;
++};
++constexpr static int MaxNumberOfPanels = 2;
++static Panel sPanels[MaxNumberOfPanels];
++static int sNumberOfPanels = 1;
++static SDL_Rect sFrame;
++
++static const Panel * panelForY(float y) {
++  for (int i = sNumberOfPanels - 1; i > 0; i--) {
++    if (y >= sPanels[i].src.y) {
++      return &sPanels[i];
++    }
++  }
++  return &sPanels[0];
++}
++
++static float panelScaleX(const Panel * p) { return static_cast<float>(p->dst.w) / p->src.w; }
++static float panelScaleY(const Panel * p) { return static_cast<float>(p->dst.h) / p->src.h; }
++
++static void makeAbsolute(const SDL_FRect f, SDL_Rect * r) {
++  const Panel * p = panelForY(f.y + f.h / 2.0f);
++  r->x = std::round((f.x - p->src.x) * panelScaleX(p) + static_cast<float>(p->dst.x));
++  r->y = std::round((f.y - p->src.y) * panelScaleY(p) + static_cast<float>(p->dst.y));
++  r->w = std::round(f.w * panelScaleX(p));
++  r->h = std::round(f.h * panelScaleY(p));
++}
++
++static void makeAbsolute(const SDL_FPoint f, SDL_Point * pt) {
++  const Panel * p = panelForY(f.y);
++  pt->x = (f.x - p->src.x) * panelScaleX(p) + p->dst.x;
++  pt->y = (f.y - p->src.y) * panelScaleY(p) + p->dst.y;
++}
++
++// Ratio width/height in pixels of a normalized area of the background
++static float pixelRatio(const SDL_FRect & area) {
++  return (area.w * static_cast<float>(backgroundWidth)) / (area.h * static_cast<float>(backgroundHeight));
++}
++
++static void recomputePortrait(float windowWidth, float windowHeight) {
++  float aoiRatio = pixelRatio(areaOfInterest);
++  float windowRatio = windowWidth/windowHeight;
++  if (aoiRatio > windowRatio) {
++    // Area of interest is wider than the window: bars above and below
++    sFrame.w = windowWidth / areaOfInterest.w;
++    sFrame.h = (windowWidth / aoiRatio) / areaOfInterest.h;
++    sFrame.x = - areaOfInterest.x * sFrame.w;
++    sFrame.y = (windowHeight - windowWidth/aoiRatio)/2 - areaOfInterest.y * sFrame.h;
++  } else {
++    // Area of interest is taller than the window: bars on the sides
++    sFrame.h = windowHeight / areaOfInterest.h;
++    sFrame.w = (windowHeight * aoiRatio) / areaOfInterest.w;
++    sFrame.y = - areaOfInterest.y * sFrame.h;
++    sFrame.x = (windowWidth - windowHeight*aoiRatio)/2.0f - areaOfInterest.x * sFrame.w;
++  }
++  sNumberOfPanels = 1;
++  sPanels[0].src = {0.0f, 0.0f, 1.0f, 1.0f};
++  sPanels[0].dst = sFrame;
++}
++
++static void recomputeLandscape(float windowWidth, float windowHeight) {
++  // Keep the panels away from the edges (rounded corners, notches...)
++  float margin = std::round(windowHeight * 0.03f);
++  float availableHeight = windowHeight - 2.0f * margin;
++
++  // Keyboard: as tall as possible, but never more than half the width
++  float kbRatio = pixelRatio(landscapeKeyboardPanel);
++  float kbH = availableHeight;
++  float kbW = kbH * kbRatio;
++  if (kbW > windowWidth * 0.5f) {
++    kbW = windowWidth * 0.5f;
++    kbH = kbW / kbRatio;
++  }
++
++  // Screen: as large as possible in what remains on the left
++  float scrRatio = pixelRatio(landscapeScreenPanel);
++  float availableWidth = windowWidth - kbW - 3.0f * margin;
++  float scrW = availableWidth;
++  float scrH = scrW / scrRatio;
++  if (scrH > availableHeight) {
++    scrH = availableHeight;
++    scrW = scrH * scrRatio;
++  }
++
++  sNumberOfPanels = 2;
++  // Panels must be ordered by src.y, see panelForY
++  sPanels[0].src = landscapeScreenPanel;
++  sPanels[0].dst.w = std::round(scrW);
++  sPanels[0].dst.h = std::round(scrH);
++  sPanels[0].dst.x = std::round(margin + (availableWidth - scrW) / 2.0f);
++  sPanels[0].dst.y = std::round((windowHeight - scrH) / 2.0f);
++
++  sPanels[1].src = landscapeKeyboardPanel;
++  sPanels[1].dst.w = std::round(kbW);
++  sPanels[1].dst.h = std::round(kbH);
++  sPanels[1].dst.x = std::round(windowWidth - margin - kbW);
++  sPanels[1].dst.y = std::round((windowHeight - kbH) / 2.0f);
++
++  // Equivalent full background frame at the keyboard's scale
++  sFrame.w = std::round(kbW / landscapeKeyboardPanel.w);
++  sFrame.h = std::round(kbH / landscapeKeyboardPanel.h);
++  sFrame.x = std::round(sPanels[1].dst.x - landscapeKeyboardPanel.x * sFrame.w);
++  sFrame.y = std::round(sPanels[1].dst.y - landscapeKeyboardPanel.y * sFrame.h);
++}
++
++void recompute(int width, int height) {
++  float windowWidth = static_cast<float>(width);
++  float windowHeight = static_cast<float>(height);
++  if (width > height) {
++    recomputeLandscape(windowWidth, windowHeight);
++  } else {
++    recomputePortrait(windowWidth, windowHeight);
++  }
++}
++
++void getScreenRect(SDL_Rect * rect) {
++  makeAbsolute(screenRect, rect);
++}
++
++void getBackgroundRect(SDL_Rect * rect) {
++  *rect = sFrame;
++}
++
++"""
+ 
+-    f.write("void getBackgroundRect(SDL_Rect * rect) {\n")
+-    f.write("  rect->x = sFrame.x;\n")
+-    f.write("  rect->y = sFrame.y;\n")
+-    f.write("  rect->w = sFrame.w;\n")
+-    f.write("  rect->h = sFrame.h;\n")
+-    f.write("}\n")
++
++def print_before_keys(f):
++    f.write(LAYOUT_CORE)
+ 
+     f.write("class KeyLayout {\n")
+     f.write("public:\n")
+@@ -272,7 +342,9 @@ def print_after_keys(f):
+     )
+     f.write("   * width and the height have a constant ratio, we can compute the\n")
+     f.write("   * closenessThreshold from the frame width exclusively. */\n")
+-    f.write("  int closenessThreshold = sFrame.w/6;\n")
++    f.write(
++        "  int closenessThreshold = panelScaleX(&sPanels[sNumberOfPanels - 1])/6;\n"
++    )
+     f.write(
+         "  int squaredClosenessThreshold = closenessThreshold*closenessThreshold;\n"
+     )
+@@ -314,11 +386,19 @@ def print_after_keys(f):
+     f.write("}\n")
+ 
+     f.write("void draw(SDL_Renderer * renderer) {\n")
+-    f.write("  SDL_Rect backgroundRect;\n")
+-    f.write("  getBackgroundRect(&backgroundRect);\n")
++    f.write("  int textureWidth, textureHeight;\n")
+     f.write(
+-        "  SDL_RenderCopy(renderer, sBackgroundTexture, nullptr, &backgroundRect);\n"
++        "  SDL_QueryTexture(sBackgroundTexture, NULL, NULL, &textureWidth, &textureHeight);\n"
+     )
++    f.write("  for (int i = 0; i < sNumberOfPanels; i++) {\n")
++    f.write("    const Panel & p = sPanels[i];\n")
++    f.write("    SDL_Rect src;\n")
++    f.write("    src.x = std::round(p.src.x * textureWidth);\n")
++    f.write("    src.y = std::round(p.src.y * textureHeight);\n")
++    f.write("    src.w = std::round(p.src.w * textureWidth);\n")
++    f.write("    src.h = std::round(p.src.h * textureHeight);\n")
++    f.write("    SDL_RenderCopy(renderer, sBackgroundTexture, &src, &p.dst);\n")
++    f.write("  }\n")
+     f.write("  drawHighlightedKey(renderer);\n")
+     f.write("}\n")
+ 
